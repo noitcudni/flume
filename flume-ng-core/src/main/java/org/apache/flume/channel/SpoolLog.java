@@ -1,8 +1,11 @@
 package org.apache.flume.channel;
+import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileWriter;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.FileReader;
 import java.io.IOException;
-import java.io.PrintWriter;
+import java.util.Properties;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -10,7 +13,9 @@ import org.slf4j.LoggerFactory;
 
 public class SpoolLog {
   private static Logger LOGGER = LoggerFactory.getLogger(SpoolLog.class);
-  private static String CKPT_DATA_FILENAME= "checkpoint.data";
+  private static String CKPT_DATA_FILENAME = "checkpoint.data";
+  private static String CURR_LOG_FILENAME_KEY = "currLogFileName";
+  private static String CURR_LOG_OFFSET = "currLogOffset";
   private String currLogFileName;
   private String fullPath;
   private int currLogOffset; // next offset for reading.
@@ -50,28 +55,41 @@ public class SpoolLog {
     LOGGER.info("currLogFileName: " + currLogFileName);
     LOGGER.info("\t currLogOffset: " + currLogOffset);
 
-    StringBuffer sb = new StringBuffer();
-    sb.append("logFilename:");
-    sb.append(currLogFileName);
-    sb.append("|offset:");
-    sb.append(currLogOffset);
+    Properties prop = new Properties();
+    prop.setProperty(CURR_LOG_FILENAME_KEY, currLogFileName);
+    prop.setProperty(CURR_LOG_OFFSET, Integer.toString(currLogOffset));
 
     try {
-      //FileWriter fileWriter = new FileWriter(fullPath, false [> don't append <]);
-      LOGGER.info("fullPath: " + fullPath);//xxx
-      FileWriter logWriter = new FileWriter(fullPath, false /* don't append */);
-      //this.logWriter = new PrintWriter(fileWriter, true [> autoFlush <]);
-      LOGGER.info("writing to the log file"); //xxx
-      logWriter.write(sb.toString());
-      LOGGER.info("about to close"); //xxx
-      logWriter.close();
-      LOGGER.info("close"); //xxx
+      prop.store(new FileOutputStream(fullPath, false), null);
     } catch (IOException e) {
       LOGGER.error("Can't commit checkpoint: " + fullPath, e);
     }
   }
 
   public void replay() {
+    // Read spoollog file if exists.
+    // Do a line count on the data log file.
+    // Check the line count against spoollog's offset.
+    //
+    // If the data log file is marked COMPLETED and it's really not COMPLETED, remove the COMPLETED suffix.
+    // Reset SpoolLog state
+
+    try {
+      FileReader logReader = new FileReader(fullPath);
+      BufferedReader br = new BufferedReader(logReader);
+      String line = br.readLine();
+
+      // empty spool log file. Nothing to replay
+      if (line == null) return;
+
+
+      logReader.read();
+      logReader.close();
+    } catch (FileNotFoundException e) {
+      LOGGER.warn("log file is missing: " + fullPath, e);
+    } catch (IOException e) {
+      LOGGER.error("Failed to close logReader", e);
+    }
 
   }
 }
