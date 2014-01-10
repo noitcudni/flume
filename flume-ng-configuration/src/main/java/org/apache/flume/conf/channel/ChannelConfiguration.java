@@ -35,7 +35,7 @@ public class ChannelConfiguration extends ComponentConfiguration {
   public enum ChannelConfigurationType {
     OTHER(null),
     MEMORY("org.apache.flume.conf.channel.MemoryChannelConfiguration"),
-    
+
     /**
      * File channel
      */
@@ -44,7 +44,9 @@ public class ChannelConfiguration extends ComponentConfiguration {
     /**
      * JDBC channel provided by org.apache.flume.channel.jdbc.JdbcChannel
      */
-    JDBC("org.apache.flume.conf.channel.JdbcChannelConfiguration");
+    JDBC("org.apache.flume.conf.channel.JdbcChannelConfiguration"),
+
+    PERSISTENTSPOOL("org.apache.flume.conf.channel.PersistentSpoolChannelConfiguration");
 
     private String channelConfigurationType;
 

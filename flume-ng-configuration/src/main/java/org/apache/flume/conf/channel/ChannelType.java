@@ -44,8 +44,9 @@ public enum ChannelType {
   /**
    * JDBC channel provided by org.apache.flume.channel.jdbc.JdbcChannel
    */
-  JDBC("org.apache.flume.channel.jdbc.JdbcChannel");
+  JDBC("org.apache.flume.channel.jdbc.JdbcChannel"),
 
+  PERSISTENTSPOOL("org.apache.flume.channel.PersistentSpoolChannel");
 
   private final String channelClassName;
 
