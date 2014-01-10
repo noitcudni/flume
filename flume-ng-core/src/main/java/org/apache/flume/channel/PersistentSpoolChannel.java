@@ -18,6 +18,7 @@
  */
 package org.apache.flume.channel;
 
+import java.io.File;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
@@ -52,6 +53,8 @@ import com.google.common.base.Preconditions;
 @InterfaceStability.Stable
 @Recyclable
 public class PersistentSpoolChannel extends BasicChannelSemantics {
+  private static final String CHECKPOINT_DIR = "checkpointDir";
+
   private static Logger LOGGER = LoggerFactory.getLogger(PersistentSpoolChannel.class);
   private static final Integer defaultCapacity = 100;
   private static final Integer defaultTransCapacity = 100;
@@ -60,6 +63,8 @@ public class PersistentSpoolChannel extends BasicChannelSemantics {
   private static final Integer defaultByteCapacityBufferPercentage = 20;
 
   private static final Integer defaultKeepAlive = 3;
+  private SpoolLog log;
+  private String checkpointDir;
 
   private class PersistentSpoolTransaction extends BasicTransactionSemantics {
     private LinkedBlockingDeque<Event> takeList;
@@ -134,16 +139,23 @@ public class PersistentSpoolChannel extends BasicChannelSemantics {
       int takes = takeList.size();
       synchronized(queueLock) {
         if(puts > 0 ) {
-          LOGGER.info("here");//xxx
           while(!putList.isEmpty()) {
-            Event e = putList.removeFirst();
-            LOGGER.info("filename: " +
-                e.getHeaders().get(SpoolDirectorySourceConfigurationConstants.DEFAULT_FILENAME_HEADER_KEY));
-            if(!queue.offer(e)) {
+            if(!queue.offer(putList.removeFirst())) {
               throw new RuntimeException("Queue add failed, this shouldn't be able to happen");
             }
           }
         }
+        if (takes > 0) {
+          // just take a peek to see what file we are dealing with
+          Event e = takeList.getFirst();
+          LOGGER.info("filename: " +
+              e.getHeaders().get(SpoolDirectorySourceConfigurationConstants.DEFAULT_FILENAME_HEADER_KEY)); //xxx
+          LOGGER.info("\tsize: " + takes); //xxx
+          String logFilename =
+            e.getHeaders().get(SpoolDirectorySourceConfigurationConstants.DEFAULT_FILENAME_HEADER_KEY);
+          log.commit(logFilename, takes);
+        }
+
         putList.clear();
         takeList.clear();
       }
@@ -226,6 +238,8 @@ public class PersistentSpoolChannel extends BasicChannelSemantics {
    */
   @Override
   public void configure(Context context) {
+    String homePath = System.getProperty("user.home").replace('\\', '/');
+
     Integer capacity = null;
     try {
       capacity = context.getInteger("capacity", defaultCapacity);
@@ -315,6 +329,9 @@ public class PersistentSpoolChannel extends BasicChannelSemantics {
     if (channelCounter == null) {
       channelCounter = new ChannelCounter(getName());
     }
+
+    checkpointDir = context.getString(CHECKPOINT_DIR,
+        homePath + "/.flume/persistent-spool-channel/checkpoint");
   }
 
   private void resizeQueue(int capacity) throws InterruptedException {
@@ -351,6 +368,8 @@ public class PersistentSpoolChannel extends BasicChannelSemantics {
     channelCounter.setChannelSize(queue.size());
     channelCounter.setChannelCapacity(Long.valueOf(
             queue.size() + queue.remainingCapacity()));
+
+    log = new SpoolLog(checkpointDir);
     super.start();
   }
 
