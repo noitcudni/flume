@@ -222,7 +222,7 @@ public class PersistentSpoolChannel extends BasicChannelSemantics {
   private volatile int byteCapacityBufferPercentage;
   private Semaphore bytesRemaining;
   private ChannelCounter channelCounter;
-
+  private String completedSuffix;
 
   public PersistentSpoolChannel() {
     super();
@@ -238,6 +238,9 @@ public class PersistentSpoolChannel extends BasicChannelSemantics {
    */
   @Override
   public void configure(Context context) {
+    completedSuffix = context.getString(
+        SpoolDirectorySourceConfigurationConstants.SPOOLED_FILE_SUFFIX,
+        SpoolDirectorySourceConfigurationConstants.DEFAULT_SPOOLED_FILE_SUFFIX);
     String homePath = System.getProperty("user.home").replace('\\', '/');
 
     Integer capacity = null;
@@ -369,7 +372,8 @@ public class PersistentSpoolChannel extends BasicChannelSemantics {
     channelCounter.setChannelCapacity(Long.valueOf(
             queue.size() + queue.remainingCapacity()));
 
-    log = new SpoolLog(checkpointDir);
+    log = new SpoolLog(checkpointDir, completedSuffix);
+    log.replay();
     super.start();
   }
 
