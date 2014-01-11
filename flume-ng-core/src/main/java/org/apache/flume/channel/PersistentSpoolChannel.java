@@ -62,7 +62,7 @@ public class PersistentSpoolChannel extends BasicChannelSemantics {
   private static final Integer defaultByteCapacityBufferPercentage = 20;
 
   private static final Integer defaultKeepAlive = 3;
-  private SpoolLog log;
+  private SpoolLog spoolCheckPoint;
   private String checkpointDir;
 
   private class PersistentSpoolTransaction extends BasicTransactionSemantics {
@@ -81,9 +81,10 @@ public class PersistentSpoolChannel extends BasicChannelSemantics {
 
     @Override
     protected void doPut(Event event) throws InterruptedException {
-      if( !log.putCheck(event.getHeaders().get(fileHeaderKey)) ) {
-        // still replaying.
-        log.advanceOffsetDuringReplay();
+        LOGGER.info("Don't put anything."); //xxx
+      if( !spoolCheckPoint.putCheck(event.getHeaders().get(fileHeaderKey)) ) {
+        // still need to keep replaying.
+        spoolCheckPoint.replay();
         return;
       }
 
@@ -156,9 +157,9 @@ public class PersistentSpoolChannel extends BasicChannelSemantics {
           LOGGER.debug("filename: " +
               e.getHeaders().get(fileHeaderKey));
           LOGGER.debug("\tsize: " + takes);
-          String logFilename =
+          String dataFilename =
             e.getHeaders().get(fileHeaderKey);
-          log.commit(logFilename, takes);
+          spoolCheckPoint.commit(dataFilename, takes);
         }
 
         putList.clear();
@@ -383,8 +384,8 @@ public class PersistentSpoolChannel extends BasicChannelSemantics {
     channelCounter.setChannelCapacity(Long.valueOf(
             queue.size() + queue.remainingCapacity()));
 
-    log = new SpoolLog(checkpointDir, completedSuffix);
-    log.replay();
+    spoolCheckPoint = new SpoolLog(checkpointDir, completedSuffix);
+    spoolCheckPoint.restoreFromCheckPoint();
     super.start();
   }
 

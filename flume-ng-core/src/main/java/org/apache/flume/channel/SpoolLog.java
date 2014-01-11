@@ -19,13 +19,13 @@ public class SpoolLog {
   private static String CURR_LOG_OFFSET = "currLogOffset";
   private String completedSuffix;
   private String fullPath; //checkpoint's fullpath
-  private String currLogFileName;
-  private int currLogOffset; // next offset for reading.
+  private String currDataFilename;
+  private int currDataOffset; //inclusive. Start counting from 1.
   private int startPlaybackOffset;
 
   public SpoolLog(String checkpointDir, String completedSuffix)  {
     this.completedSuffix = completedSuffix;
-    this.currLogOffset = 0;
+    this.currDataOffset = 0;
     this.startPlaybackOffset = 0;
 
     // create the checkpoint dir if necessary.
@@ -50,21 +50,21 @@ public class SpoolLog {
     }
   }
 
-  public void commit(String logFileName, int logOffset) {
-    if (currLogFileName == null || !currLogFileName.equals(logFileName)) {
+  public void commit(String dataFilename, int dataOffset) {
+    if (currDataFilename == null || !currDataFilename.equals(dataFilename)) {
       LOGGER.info("reseting logOffset");
-      currLogOffset = logOffset;
+      currDataOffset = dataOffset;
     } else {
-      currLogOffset += logOffset;
+      currDataOffset += dataOffset;
     }
-    currLogFileName = logFileName;
+    currDataFilename = dataFilename;
 
-    LOGGER.info("currLogFileName: " + currLogFileName);
-    LOGGER.info("\t currLogOffset: " + currLogOffset);
+    LOGGER.info("currLogFileName: " + currDataFilename);
+    LOGGER.info("\t currLogOffset: " + currDataOffset);
 
     Properties prop = new Properties();
-    prop.setProperty(CURR_LOG_FILENAME_KEY, currLogFileName);
-    prop.setProperty(CURR_LOG_OFFSET, Integer.toString(currLogOffset));
+    prop.setProperty(CURR_LOG_FILENAME_KEY, currDataFilename);
+    prop.setProperty(CURR_LOG_OFFSET, Integer.toString(currDataOffset));
 
     try {
       prop.store(new FileOutputStream(fullPath, false), null);
@@ -73,17 +73,17 @@ public class SpoolLog {
     }
   }
 
-  private int countLines(String logFilename) throws IOException, FileNotFoundException{
+  private int countLines(String dataFilename) throws IOException, FileNotFoundException{
     int r = 0;
     LineNumberReader reader = null;
-    reader = new LineNumberReader(new FileReader(logFilename));
+    reader = new LineNumberReader(new FileReader(dataFilename));
     while ((reader.readLine()) != null);
     r = reader.getLineNumber();
     reader.close();
     return r;
   }
 
-  public void replay(){
+  public void restoreFromCheckPoint() {
     // Read spoollog file if exists.
     // Do a line count on the data log file.
     // Check the line count against spoollog's offset.
@@ -91,21 +91,21 @@ public class SpoolLog {
     // If the data log file is marked COMPLETED and it's really not COMPLETED, remove the COMPLETED suffix.
     // Reset SpoolLog state
 
-    String logFilename;
-    String completedLogFilename;
+    String dataFilename;
+    String completedDatafilename;
     int offset;
     try {
       Properties prop = new Properties();
       FileInputStream is = new FileInputStream(fullPath);
       prop.load(is);
 
-      logFilename = prop.getProperty(CURR_LOG_FILENAME_KEY);
-      completedLogFilename = logFilename + completedSuffix;
+      dataFilename = prop.getProperty(CURR_LOG_FILENAME_KEY);
+      completedDatafilename = dataFilename + completedSuffix;
 
       String offsetStr = prop.getProperty(CURR_LOG_OFFSET);
 
       // is the spool log's format correct? skip replay if there's anything missing.
-      if (logFilename == null || offsetStr == null) {
+      if (dataFilename == null || offsetStr == null) {
         return;
       }
       offset = Integer.parseInt(offsetStr);
@@ -122,24 +122,24 @@ public class SpoolLog {
     int totalLineCnt = 0;
     boolean tryCompleteSuffix = false;
     try {
-      totalLineCnt = this.countLines(logFilename);
+      totalLineCnt = this.countLines(dataFilename);
     } catch (FileNotFoundException e) {
-      LOGGER.info("Data file is missing: " + logFilename + ". Try reading the suffix version.");
+      LOGGER.info("Data file is missing: " + dataFilename + ". Try reading the suffix version.");
       tryCompleteSuffix = true;
     } catch (IOException e) {
-      LOGGER.error("Failed to wc -l on : " + logFilename);
+      LOGGER.error("Failed to wc -l on : " + dataFilename);
       return;
     }
 
     if (tryCompleteSuffix) {
       try {
-        completedLogFilename = logFilename + completedSuffix;
-        totalLineCnt = this.countLines(completedLogFilename);
+        completedDatafilename = dataFilename + completedSuffix;
+        totalLineCnt = this.countLines(completedDatafilename);
       } catch (FileNotFoundException e) {
-        LOGGER.error("Data file (COMPLETE) is missing: " + completedLogFilename + ". Try reading the suffix version.", e);
+        LOGGER.error("Data file (COMPLETE) is missing: " + completedDatafilename + ". Try reading the suffix version.", e);
         return;
       } catch (IOException e) {
-        LOGGER.error("Failed to wc -l on : " + completedLogFilename);
+        LOGGER.error("Failed to wc -l on : " + completedDatafilename);
         return;
       }
     }
@@ -153,10 +153,10 @@ public class SpoolLog {
     //
     if (offset != totalLineCnt) {
       if (tryCompleteSuffix) {
-        new File(completedLogFilename).renameTo(new File(logFilename));
+        new File(completedDatafilename).renameTo(new File(dataFilename));
       }
-      this.currLogFileName = logFilename;
-      this.currLogOffset = 0;
+      this.currDataFilename = dataFilename;
+      this.currDataOffset = 0;
       this.startPlaybackOffset = offset;
     }
   }
@@ -165,14 +165,14 @@ public class SpoolLog {
   /*
    * Returns true to indicate that doPut in PersistentPoolChannle should proceed as normal.
    */
-  public boolean putCheck(String logFileName) {
+  public boolean putCheck(String dataFilename) {
     boolean r = true;
     if (this.startPlaybackOffset > 0) { // possibly still doing replay
-      if(!this.currLogFileName.equals(logFileName)) {
+      if(!this.currDataFilename.equals(dataFilename)) {
         this.startPlaybackOffset = 0;
       } else {
         // still replay
-        if (this.currLogOffset < this.startPlaybackOffset) {
+        if (this.currDataOffset < this.startPlaybackOffset) {
           r = false;
         }
       }
@@ -180,8 +180,8 @@ public class SpoolLog {
     return r;
   }
 
-  public void advanceOffsetDuringReplay() {
-    this.currLogOffset++;
+  public void replay() {
+    this.currDataOffset++;
   }
 }
 
