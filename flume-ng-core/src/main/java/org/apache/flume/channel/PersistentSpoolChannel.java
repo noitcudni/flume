@@ -18,7 +18,6 @@
  */
 package org.apache.flume.channel;
 
-import java.io.File;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
@@ -82,6 +81,12 @@ public class PersistentSpoolChannel extends BasicChannelSemantics {
 
     @Override
     protected void doPut(Event event) throws InterruptedException {
+      if( !log.putCheck(event.getHeaders().get(fileHeaderKey)) ) {
+        // still replaying.
+        log.advanceOffsetDuringReplay();
+        return;
+      }
+
       channelCounter.incrementEventPutAttemptCount();
       int eventByteSize = (int)Math.ceil(estimateEventSize(event)/byteCapacitySlotSize);
 
@@ -148,11 +153,11 @@ public class PersistentSpoolChannel extends BasicChannelSemantics {
         if (takes > 0) {
           // just take a peek to see what file we are dealing with
           Event e = takeList.getFirst();
-          LOGGER.info("filename: " +
-              e.getHeaders().get(SpoolDirectorySourceConfigurationConstants.DEFAULT_FILENAME_HEADER_KEY)); //xxx
-          LOGGER.info("\tsize: " + takes); //xxx
+          LOGGER.debug("filename: " +
+              e.getHeaders().get(fileHeaderKey));
+          LOGGER.debug("\tsize: " + takes);
           String logFilename =
-            e.getHeaders().get(SpoolDirectorySourceConfigurationConstants.DEFAULT_FILENAME_HEADER_KEY);
+            e.getHeaders().get(fileHeaderKey);
           log.commit(logFilename, takes);
         }
 
@@ -223,6 +228,7 @@ public class PersistentSpoolChannel extends BasicChannelSemantics {
   private Semaphore bytesRemaining;
   private ChannelCounter channelCounter;
   private String completedSuffix;
+  private String fileHeaderKey;
 
   public PersistentSpoolChannel() {
     super();
@@ -241,6 +247,11 @@ public class PersistentSpoolChannel extends BasicChannelSemantics {
     completedSuffix = context.getString(
         SpoolDirectorySourceConfigurationConstants.SPOOLED_FILE_SUFFIX,
         SpoolDirectorySourceConfigurationConstants.DEFAULT_SPOOLED_FILE_SUFFIX);
+
+    fileHeaderKey = context.getString(
+        SpoolDirectorySourceConfigurationConstants.FILENAME_HEADER_KEY,
+        SpoolDirectorySourceConfigurationConstants.DEFAULT_FILENAME_HEADER_KEY);
+
     String homePath = System.getProperty("user.home").replace('\\', '/');
 
     Integer capacity = null;

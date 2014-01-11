@@ -8,7 +8,6 @@ import java.io.IOException;
 import java.io.LineNumberReader;
 import java.util.Properties;
 
-import org.apache.flume.source.SpoolDirectorySourceConfigurationConstants;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,12 +18,15 @@ public class SpoolLog {
   private static String CURR_LOG_FILENAME_KEY = "currLogFileName";
   private static String CURR_LOG_OFFSET = "currLogOffset";
   private String completedSuffix;
+  private String fullPath; //checkpoint's fullpath
   private String currLogFileName;
-  private String fullPath;
   private int currLogOffset; // next offset for reading.
+  private int startPlaybackOffset;
 
   public SpoolLog(String checkpointDir, String completedSuffix)  {
     this.completedSuffix = completedSuffix;
+    this.currLogOffset = 0;
+    this.startPlaybackOffset = 0;
 
     // create the checkpoint dir if necessary.
     File dir = new File(checkpointDir);
@@ -90,6 +92,7 @@ public class SpoolLog {
     // Reset SpoolLog state
 
     String logFilename;
+    String completedLogFilename;
     int offset;
     try {
       Properties prop = new Properties();
@@ -97,6 +100,8 @@ public class SpoolLog {
       prop.load(is);
 
       logFilename = prop.getProperty(CURR_LOG_FILENAME_KEY);
+      completedLogFilename = logFilename + completedSuffix;
+
       String offsetStr = prop.getProperty(CURR_LOG_OFFSET);
 
       // is the spool log's format correct? skip replay if there's anything missing.
@@ -128,20 +133,55 @@ public class SpoolLog {
 
     if (tryCompleteSuffix) {
       try {
-        logFilename = logFilename + completedSuffix;
-        totalLineCnt = this.countLines(logFilename);
+        completedLogFilename = logFilename + completedSuffix;
+        totalLineCnt = this.countLines(completedLogFilename);
       } catch (FileNotFoundException e) {
-        LOGGER.error("Data file (COMPLETE) is missing: " + logFilename + ". Try reading the suffix version.", e);
+        LOGGER.error("Data file (COMPLETE) is missing: " + completedLogFilename + ". Try reading the suffix version.", e);
         return;
       } catch (IOException e) {
-        LOGGER.error("Failed to wc -l on : " + logFilename);
+        LOGGER.error("Failed to wc -l on : " + completedLogFilename);
         return;
       }
-
     }
 
-    LOGGER.info("offset from checkpoint: " + offset); //xxx
-    LOGGER.info("totalLineCnt: " + totalLineCnt); //xxx
+    LOGGER.info("offset from checkpoint: " + offset);
+    LOGGER.info("totalLineCnt: " + totalLineCnt);
+
+    // This particular data log file hasn't been completely consumed yet.
+    // Remove the complete suffix if applicable.
+    // Reset SpoolLog's internal state: currLogFileName; currLogOffset.
+    //
+    if (offset != totalLineCnt) {
+      if (tryCompleteSuffix) {
+        new File(completedLogFilename).renameTo(new File(logFilename));
+      }
+      this.currLogFileName = logFilename;
+      this.currLogOffset = 0;
+      this.startPlaybackOffset = offset;
+    }
+  }
+
+
+  /*
+   * Returns true to indicate that doPut in PersistentPoolChannle should proceed as normal.
+   */
+  public boolean putCheck(String logFileName) {
+    boolean r = true;
+    if (this.startPlaybackOffset > 0) { // possibly still doing replay
+      if(!this.currLogFileName.equals(logFileName)) {
+        this.startPlaybackOffset = 0;
+      } else {
+        // still replay
+        if (this.currLogOffset < this.startPlaybackOffset) {
+          r = false;
+        }
+      }
+    }
+    return r;
+  }
+
+  public void advanceOffsetDuringReplay() {
+    this.currLogOffset++;
   }
 }
 
