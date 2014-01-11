@@ -81,7 +81,6 @@ public class PersistentSpoolChannel extends BasicChannelSemantics {
 
     @Override
     protected void doPut(Event event) throws InterruptedException {
-        LOGGER.info("Don't put anything."); //xxx
       if( !spoolCheckPoint.putCheck(event.getHeaders().get(fileHeaderKey)) ) {
         // still need to keep replaying.
         spoolCheckPoint.replay();

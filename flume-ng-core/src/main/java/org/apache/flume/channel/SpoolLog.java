@@ -20,7 +20,7 @@ public class SpoolLog {
   private String completedSuffix;
   private String fullPath; //checkpoint's fullpath
   private String currDataFilename;
-  private int currDataOffset; //inclusive. Start counting from 1.
+  private int currDataOffset; //inclusive.
   private int startPlaybackOffset;
 
   public SpoolLog(String checkpointDir, String completedSuffix)  {
